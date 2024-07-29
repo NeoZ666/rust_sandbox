@@ -316,7 +316,7 @@ fn create_output_group(
         is_segwit,
         creation_sequence,
     }
-}
+}  
 
 // fn create_output_group() -> Vec<OutputGroup> {
 //     vec![
