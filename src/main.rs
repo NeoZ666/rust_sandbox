@@ -632,6 +632,7 @@ mod test {
             },
         ]
     }
+
     fn setup_options(target_value: u64) -> CoinSelectionOpt {
         CoinSelectionOpt {
             target_value,
@@ -648,13 +649,12 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_bnb() {
+    fn test_bnb_basic() {
         // Perform BNB selection of set of test values.
         let values = [
             OutputGroup {
-                value: 10000000,
-                weight: 100,
+                value: 2000,
+                weight: 200,
                 input_count: 1,
                 is_segwit: false,
                 creation_sequence: Some(1),
@@ -688,6 +688,74 @@ mod test {
         // as 10000000 should not be included in the selection
     }
 
+    fn test_bnb_multiple_solutions() {
+        // Perform BNB selection of set of test values.
+        let values = [
+            OutputGroup {
+                value: 5500000,
+                weight: 200,
+                input_count: 1,
+                is_segwit: false,
+                creation_sequence: Some(1),
+            },
+            OutputGroup {
+                value: 5000000,
+                weight: 200,
+                input_count: 1,
+                is_segwit: false,
+                creation_sequence: Some(5000),
+            },
+            OutputGroup {
+                value: 4000000,
+                weight: 300,
+                input_count: 1,
+                is_segwit: false,
+                creation_sequence: Some(1001),
+            },
+            OutputGroup {
+                value: 3500000,
+                weight: 10,
+                input_count: 1,
+                is_segwit: false,
+                creation_sequence: Some(1000),
+            },
+        ];
+        
+        // Adjust the target value to ensure it tests for multiple valid solutions
+        let opt = setup_options(9000000);
+    
+        // Run the BnB selection algorithm multiple times to find different solutions
+        let mut found_solutions = 0;
+        for _ in 0..1000 {
+            let ans = select_coin_bnb(&values, opt, &mut rand::thread_rng());
+            if let Ok(selection_output) = ans {
+                let selected_inputs = selection_output.selected_inputs;
+                let selected_value: u64 = selected_inputs.iter().map(|&i| values[i].value).sum();
+    
+                // Ensure the selected value is appropriate and store the solution
+                if selected_value == 9500000 {
+                    found_solutions += 1;
+                    if found_solutions > 1 {
+                        break;
+                    }
+                }
+            }
+        }
+    
+        // Ensure that multiple distinct solutions are found
+        assert!(
+            found_solutions > 1,
+            "Expected multiple solutions, but found only one or none"
+        );
+    }
+
+    fn test_bnb_no_solutions() {
+        let inputs = setup_basic_output_groups();
+        let options = setup_options(7000); // Set a target value higher than the sum of all inputs
+        let result = select_coin_bnb(&inputs, options, &mut rand::thread_rng());
+        assert!(matches!(result, Err(SelectionError::InsufficientFunds)));
+    }
+
     fn test_successful_selection() {
         let mut inputs = setup_basic_output_groups();
         let mut options = setup_options(2500);
@@ -710,6 +778,8 @@ mod test {
         let result = select_coin_srd(&inputs, options, &mut rand::thread_rng());
         assert!(matches!(result, Err(SelectionError::InsufficientFunds)));
     }
+
+    
     #[test]
     fn test_srd() {
         test_successful_selection();
@@ -719,6 +789,13 @@ mod test {
     #[test]
     fn test_knapsack() {
         // Perform Knapsack selection of set of test values.
+    }
+
+    #[test]
+    fn test_bnb() {
+        test_bnb_basic();
+        test_bnb_multiple_solutions();
+        test_bnb_no_solutions();
     }
 
     #[test]

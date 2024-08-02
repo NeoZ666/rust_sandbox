@@ -345,6 +345,47 @@ fn create_output_group(
 // }
 
 #[test]
+fn test_bnb() {
+    // Perform BNB selection of set of test values.
+    let values = [
+        OutputGroup {
+            value: 2000,
+            weight: 200,
+            input_count: 1,
+            is_segwit: false,
+            creation_sequence: Some(1),
+        },
+        OutputGroup {
+            value: 5000000,
+            weight: 200,
+            input_count: 1,
+            is_segwit: false,
+            creation_sequence: Some(5000),
+        },
+        OutputGroup {
+            value: 9000000,
+            weight: 300,
+            input_count: 1,
+            is_segwit: false,
+            creation_sequence: Some(1001),
+        },
+        OutputGroup {
+            value: 270,
+            weight: 10,
+            input_count: 1,
+            is_segwit: false,
+            creation_sequence: Some(1000),
+        },
+    ];
+    let opt = setup_options(14000000);
+    let ans = select_coin_bnb(&values, opt, &mut rand::thread_rng());
+    assert!(ans.is_ok());
+    assert!(!ans.unwrap().selected_inputs.contains(&0));
+    // as 10000000 should not be included in the selection
+}
+
+
+#[test]
 fn test_bnb_exact_match() {
     let inputs = vec![
         create_output_group(1000, 100, 1, false, None),
@@ -406,7 +447,7 @@ fn bnb_test_multiple_solutions() {
         create_output_group(3000, 300, 1, false, None),
         create_output_group(3000, 300, 1, false, None),
     ];
-    let options = setup_options(5000);
+    let options = setup_options(14000000);
     let mut rng = thread_rng();
 
     let result = select_coin_bnb(&inputs, options, &mut rng);
@@ -419,7 +460,7 @@ fn bnb_test_multiple_solutions() {
 #[test]
 fn bnb_test_single_input_match() {
     let inputs = vec![create_output_group(5000, 500, 1, false, None)];
-    let options = setup_options(5000);
+    let options = setup_options(14000000);
     let mut rng = thread_rng();
 
     let result = select_coin_bnb(&inputs, options, &mut rng);
