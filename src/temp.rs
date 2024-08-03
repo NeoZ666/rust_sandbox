@@ -93,14 +93,16 @@ pub struct SelectionOutput {
     pub waste: WasteMetric,
 }
 
-/// Perform Coinselection via Branch And Bound algorithm.
 pub fn select_coin_bnb(
     inputs: &[OutputGroup],
     options: CoinSelectionOpt,
     rng: &mut ThreadRng,
 ) -> Result<SelectionOutput, SelectionError> {
+    println!("Starting select_coin_bnb with {} inputs", inputs.len());
+    println!("Target value: {}", options.target_value);
+
     let mut selected_inputs: Vec<usize> = vec![];
-    let bnb_tries = 1000000;
+    const BNB_TRIES: u32 = 1_000_000;
 
     let mut sorted_inputs: Vec<(usize, OutputGroup)> = inputs
         .iter()
@@ -109,15 +111,20 @@ pub fn select_coin_bnb(
         .collect();
     sorted_inputs.sort_by_key(|(_, input)| std::cmp::Reverse(input.value));
 
+    println!("Sorted inputs: {:?}", sorted_inputs.iter().map(|(_, og)| og.value).collect::<Vec<_>>());
+
     let bnb_selected_coin = bnb(
         &sorted_inputs,
         &mut selected_inputs,
         0,
         0,
-        bnb_tries,
+        BNB_TRIES,
         &options,
         rng,
     );
+    
+    println!("BnB result: {:?}", bnb_selected_coin);
+
     match bnb_selected_coin {
         Some(selected_coin) => {
             let accumulated_value: u64 = selected_coin
@@ -139,14 +146,16 @@ pub fn select_coin_bnb(
                 selected_inputs: selected_coin,
                 waste: WasteMetric(waste),
             };
+            println!("Selected inputs: {:?}, Total value: {}", selection_output.selected_inputs, accumulated_value);
             Ok(selection_output)
         }
-        None => select_coin_srd(inputs, options, &mut rand::thread_rng()),
+        None => {
+            println!("No solution found");
+            Err(SelectionError::NoSolutionFound)
+        }
     }
 }
 
-/// Return empty vec if no solutions are found
-// changing the selected_inputs : &[usize] -> &mut Vec<usize>
 fn bnb(
     inputs_in_desc_value: &[(usize, OutputGroup)],
     selected_inputs: &mut Vec<usize>,
@@ -156,25 +165,34 @@ fn bnb(
     options: &CoinSelectionOpt,
     rng: &mut ThreadRng,
 ) -> Option<Vec<usize>> {
+    println!("BnB: depth={}, acc_eff_value={}, selected_inputs={:?}", depth, acc_eff_value, selected_inputs);
+
     let target_for_match = options.target_value
         + calculate_fee(options.base_weight, options.target_feerate)
         + options.cost_per_output;
     let match_range = options.cost_per_input + options.cost_per_output;
+
+    println!("Target for match: {}, Match range: {}", target_for_match, match_range);
+
     if acc_eff_value > target_for_match + match_range {
+        println!("Accumulated value too high, returning None");
         return None;
     }
     if acc_eff_value >= target_for_match {
+        println!("Solution found: {:?}", selected_inputs);
         return Some(selected_inputs.to_vec());
     }
     if bnp_tries == 0 || depth >= inputs_in_desc_value.len() {
+        println!("Reached max tries or depth, returning None");
         return None;
     }
+
     if rng.gen_bool(0.5) {
         // exploring the inclusion branch
-        // first include then omit
         let new_effective_values =
             acc_eff_value + effective_value(&inputs_in_desc_value[depth].1, options.target_feerate);
         selected_inputs.push(inputs_in_desc_value[depth].0);
+        println!("Including input at depth {}", depth);
         let with_this = bnb(
             inputs_in_desc_value,
             selected_inputs,
@@ -187,8 +205,9 @@ fn bnb(
         match with_this {
             Some(_) => with_this,
             None => {
-                selected_inputs.pop(); //poping out the selected utxo if it does not fit
-                let without_this = bnb(
+                selected_inputs.pop();
+                println!("Excluding input at depth {} after inclusion failed", depth);
+                bnb(
                     inputs_in_desc_value,
                     selected_inputs,
                     acc_eff_value,
@@ -196,20 +215,17 @@ fn bnb(
                     bnp_tries - 1,
                     options,
                     rng,
-                );
-                match without_this {
-                    Some(_) => without_this,
-                    None => None, // this may or may not be correct
-                }
+                )
             }
         }
     } else {
+        println!("Excluding input at depth {}", depth);
         let without_this = bnb(
             inputs_in_desc_value,
             selected_inputs,
             acc_eff_value,
             depth + 1,
-            bnp_tries - 1,
+            bnp_tries - 2,
             options,
             rng,
         );
@@ -219,27 +235,24 @@ fn bnb(
                 let new_effective_values = acc_eff_value
                     + effective_value(&inputs_in_desc_value[depth].1, options.target_feerate);
                 selected_inputs.push(inputs_in_desc_value[depth].0);
+                println!("Including input at depth {} after exclusion failed", depth);
                 let with_this = bnb(
                     inputs_in_desc_value,
                     selected_inputs,
                     new_effective_values,
                     depth + 1,
-                    bnp_tries - 1,
+                    bnp_tries - 2,
                     options,
                     rng,
                 );
-                match with_this {
-                    Some(_) => with_this,
-                    None => {
-                        selected_inputs.pop(); // poping out the selected utxo if it does not fit
-                        None // this may or may not be correct
-                    }
+                if with_this.is_none() {
+                    selected_inputs.pop();
                 }
+                with_this
             }
         }
     }
 }
-
 /// Perform Coinselection via Knapsack solver.
 pub fn select_coin_knapsack(
     inputs: &[OutputGroup],
